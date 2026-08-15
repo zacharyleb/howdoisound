@@ -1,0 +1,1623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#15171A">
+<title>howdoisound</title>
+<meta name="description" content="A nine pad sampler that runs in the browser. Record, trim, loop, and share boards.">
+<style>
+  :root{
+    --chassis:#23262B; --pad:#2E333A; --pad-hi:#3C424B;
+    --silk:#9AA1A9; --silk-dim:#5E656D;
+    --lcd-bg:#1A1205; --lcd-on:#FFA92E; --lcd-mid:rgba(255,169,46,.42); --lcd-dim:rgba(255,169,46,.13);
+    --rec:#FF4433; --ok:#7FD48A;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    background:#0B0C0E;
+    font-family:"Avenir Next Condensed","Helvetica Neue",Arial,sans-serif;
+    color:var(--silk);
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+    overflow:hidden;touch-action:manipulation;
+  }
+
+  .unit{
+    position:fixed;inset:0;display:flex;flex-direction:column;
+    padding:calc(env(safe-area-inset-top,0px) + 8px) 10px calc(env(safe-area-inset-bottom,0px) + 8px);
+    gap:7px;
+    background:linear-gradient(180deg,#2A2E34 0%,#1E2126 34%,#191C20 100%);
+    background-color:var(--chassis);
+  }
+  .unit::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(90deg,rgba(255,255,255,.022) 0 1px,transparent 1px 3px);mix-blend-mode:overlay;}
+  .unit::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(120% 55% at 50% -10%,rgba(255,255,255,.07),transparent 60%);}
+
+  .brand{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:2;padding:0 2px;gap:10px;}
+  .mark{display:flex;align-items:baseline;gap:7px;min-width:0;}
+  .mark b{font-size:17px;font-weight:600;letter-spacing:.02em;color:#D5DAE0;text-shadow:0 1px 0 rgba(0,0,0,.6);}
+  .mark span{font-size:8.5px;letter-spacing:.26em;color:var(--silk-dim);text-transform:uppercase;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .power{display:flex;align-items:center;gap:6px;font-size:8.5px;letter-spacing:.22em;color:var(--silk-dim);flex:none;}
+  .led{width:7px;height:7px;border-radius:50%;background:#3A2C18;box-shadow:inset 0 1px 1px rgba(0,0,0,.7);}
+  .led.on{background:var(--lcd-on);box-shadow:0 0 8px rgba(255,169,46,.85);}
+  .led.rec{background:var(--rec);box-shadow:0 0 10px rgba(255,68,51,.9);}
+
+  .lcd{
+    position:relative;z-index:2;border-radius:5px;padding:9px 11px 8px;
+    background:linear-gradient(180deg,#241905,#150E03);background-color:var(--lcd-bg);
+    border:1px solid #0A0805;
+    box-shadow:inset 0 0 26px rgba(255,169,46,.10),inset 0 2px 5px rgba(0,0,0,.85),0 1px 0 rgba(255,255,255,.06);
+    display:flex;flex-direction:column;gap:6px;
+    font-family:ui-monospace,Menlo,"Courier New",monospace;overflow:hidden;
+  }
+  .lcd::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(115deg,rgba(255,255,255,.05) 0 34%,transparent 34.5%),
+      repeating-linear-gradient(0deg,rgba(0,0,0,.30) 0 1px,transparent 1px 3px),
+      repeating-linear-gradient(90deg,rgba(0,0,0,.30) 0 1px,transparent 1px 3px);}
+  .lcd-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .lcd-main{font-size:12px;letter-spacing:.11em;color:var(--lcd-on);text-shadow:0 0 9px rgba(255,169,46,.6);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .lcd-sub{font-size:9px;letter-spacing:.1em;color:var(--lcd-mid);white-space:nowrap;}
+  #scope{display:block;width:100%;height:26px;}
+  .loopbar{height:3px;border-radius:2px;background:rgba(255,169,46,.12);overflow:hidden;display:none;}
+  .loopbar.on{display:block;}
+  .loopbar i{display:block;height:100%;width:0;background:var(--lcd-on);box-shadow:0 0 6px rgba(255,169,46,.8);}
+  .lcd-foot{display:flex;justify-content:space-between;font-size:8px;letter-spacing:.16em;color:var(--lcd-dim);}
+  .lcd-foot i{font-style:normal;color:var(--lcd-mid);}
+
+  .grid{position:relative;z-index:2;flex:1;min-height:0;
+    display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;}
+  .pad{
+    position:relative;border:none;border-radius:7px;
+    background:linear-gradient(180deg,var(--pad-hi),var(--pad) 42%,#252A31);
+    color:var(--silk);font:inherit;padding:7px;
+    display:flex;flex-direction:column;justify-content:space-between;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.10),inset 0 -2px 3px rgba(0,0,0,.45),0 3px 0 #101215,0 5px 10px rgba(0,0,0,.55);
+    transition:transform .06s ease,box-shadow .06s ease,background .18s ease;overflow:hidden;
+  }
+  .pad::before{content:"";position:absolute;inset:0;border-radius:7px;pointer-events:none;
+    background:radial-gradient(80% 60% at 50% 0%,rgba(255,255,255,.06),transparent 70%);}
+  .pad.empty{background:linear-gradient(180deg,#2B3038,#22262C 60%,#1E2227);}
+  .pad.empty .num{color:#454C55;}
+  .pad:active,.pad.hit{transform:translateY(3px);
+    box-shadow:inset 0 2px 6px rgba(0,0,0,.6),0 0 0 #101215,0 1px 3px rgba(0,0,0,.5);}
+  .pad.hit{background:linear-gradient(180deg,#5A431C,#3A2C13 60%,#2A2015);}
+  .pad.lit .num{color:var(--lcd-on);text-shadow:0 0 12px rgba(255,169,46,.75);}
+  .pad.arm{background:linear-gradient(180deg,#4A2420,#331916 60%,#261412);}
+  .pad.arm .num{color:var(--rec);}
+  .pad-top{display:flex;align-items:flex-start;justify-content:space-between;gap:5px;}
+  .num{font-size:22px;font-weight:600;line-height:.86;color:#C6CCD3;text-shadow:0 1px 0 rgba(0,0,0,.55);transition:color .12s ease;}
+  .padled{width:6px;height:6px;border-radius:50%;flex:none;margin-top:4px;background:#1B1E22;
+    box-shadow:inset 0 1px 1px rgba(0,0,0,.8);transition:all .1s ease;}
+  .pad.lit .padled{background:var(--lcd-on);box-shadow:0 0 9px rgba(255,169,46,.9);}
+  .pad.arm .padled{background:var(--rec);box-shadow:0 0 9px rgba(255,68,51,.9);}
+  .flags{font-family:ui-monospace,Menlo,monospace;font-size:7.5px;letter-spacing:.1em;color:var(--lcd-mid);height:9px;}
+  .name{font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--silk-dim);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .wave{display:flex;align-items:flex-end;gap:2px;height:15px;margin-top:3px;}
+  .wave i{flex:1;background:#474E58;border-radius:1px;min-height:2px;transition:background .1s ease;}
+  .pad.lit .wave i{background:var(--lcd-on);box-shadow:0 0 5px rgba(255,169,46,.5);}
+  .count{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    font-family:ui-monospace,Menlo,monospace;font-size:40px;color:var(--rec);text-shadow:0 0 18px rgba(255,68,51,.7);}
+  .pad.arm .count{display:flex;}
+  .pad.arm .wave,.pad.arm .name,.pad.arm .num,.pad.arm .flags{opacity:.12;}
+
+  .foot{position:relative;z-index:2;display:flex;gap:7px;}
+  .switch{position:relative;display:flex;flex:1;background:#16191D;border-radius:6px;padding:3px;
+    box-shadow:inset 0 2px 5px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.05);}
+  .switch .knob{position:absolute;top:3px;left:3px;width:calc((100% - 6px)/4);height:calc(100% - 6px);border-radius:4px;
+    background:linear-gradient(180deg,#454C55,#333941);
+    box-shadow:0 1px 3px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.14);
+    transition:transform .18s cubic-bezier(.3,1.4,.5,1),background .18s ease;}
+  body.mode-rec .switch .knob{transform:translateX(100%);background:linear-gradient(180deg,#8E2C22,#5E1C16);}
+  body.mode-load .switch .knob{transform:translateX(200%);background:linear-gradient(180deg,#C08424,#8A5C13);}
+  body.mode-edit .switch .knob{transform:translateX(300%);background:linear-gradient(180deg,#4C6478,#334553);}
+  .switch button{position:relative;flex:1;background:none;border:none;color:var(--silk-dim);font:inherit;
+    font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:10px 0;border-radius:4px;transition:color .18s ease;}
+  body.mode-play .switch button:nth-child(2){color:#E2E7EC;}
+  body.mode-rec .switch button:nth-child(3){color:#FFD9D3;}
+  body.mode-load .switch button:nth-child(4){color:#1A1205;}
+  body.mode-edit .switch button:nth-child(5){color:#E6F0F7;}
+  .util{background:linear-gradient(180deg,#3C424B,#2C3138);border:none;border-radius:6px;color:#C6CCD3;font:inherit;
+    font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:10px 12px;flex:1;
+    box-shadow:0 2px 0 #14171A,inset 0 1px 0 rgba(255,255,255,.1);}
+  .util:active{transform:translateY(2px);box-shadow:0 0 0 #14171A;}
+  .util.armed{background:linear-gradient(180deg,#8E2C22,#5E1C16);color:#FFD9D3;}
+  .util.rolling{background:linear-gradient(180deg,#C08424,#8A5C13);color:#1A1205;}
+
+  .sheet{position:fixed;inset:0;z-index:10;display:none;flex-direction:column;
+    background:rgba(6,7,9,.8);padding:14px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px);overflow-y:auto;
+    -webkit-overflow-scrolling:touch;}
+  .sheet.open{display:flex;}
+  .card{width:100%;margin-top:auto;background:linear-gradient(180deg,#2A2E34,#1D2126);border:1px solid #0E1013;
+    border-radius:9px;padding:14px;box-shadow:0 -8px 30px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.07);
+    display:flex;flex-direction:column;gap:9px;flex:none;}
+  .card h2{font-size:11px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:var(--silk);}
+  .meta{display:flex;justify-content:space-between;gap:10px;
+    font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.08em;color:var(--silk-dim);}
+  .meta i{font-style:normal;color:var(--lcd-on);}
+  .meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .card input[type=text]{width:100%;background:var(--lcd-bg);border:1px solid #0A0805;border-radius:5px;padding:11px;
+    color:var(--lcd-on);font-family:ui-monospace,Menlo,monospace;font-size:15px;letter-spacing:.08em;
+    box-shadow:inset 0 2px 5px rgba(0,0,0,.8);}
+  .card input[type=text]:focus{outline:2px solid rgba(255,169,46,.45);outline-offset:1px;}
+  .ctl{display:flex;flex-direction:column;gap:1px;}
+  .ctl label{display:flex;justify-content:space-between;font-family:ui-monospace,Menlo,monospace;
+    font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--silk-dim);}
+  .ctl label i{font-style:normal;color:var(--lcd-on);}
+  #vid{display:none;width:100%;height:80px;object-fit:cover;background:#000;border:1px solid #0A0805;border-radius:5px;}
+  #vid.show{display:block;}
+  #trimWave{display:block;width:100%;height:48px;background:linear-gradient(180deg,#241905,#150E03);
+    border:1px solid #0A0805;border-radius:5px;box-shadow:inset 0 2px 5px rgba(0,0,0,.8);}
+  input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:26px;margin:0;}
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:#16191D;box-shadow:inset 0 1px 2px #000;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:-11px;border-radius:5px;
+    background:linear-gradient(180deg,#454C55,#333941);box-shadow:0 1px 3px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.14);}
+  .row{display:flex;gap:8px;}
+  .btn{flex:1;background:linear-gradient(180deg,#3C424B,#2C3138);border:none;border-radius:6px;color:#D5DAE0;font:inherit;
+    font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:12px 6px;
+    box-shadow:0 2px 0 #14171A,inset 0 1px 0 rgba(255,255,255,.1);}
+  .btn:active{transform:translateY(2px);box-shadow:0 0 0 #14171A;}
+  .btn.warn{color:#FFB3AA;}
+  .btn.go{background:linear-gradient(180deg,#C08424,#8A5C13);color:#1A1205;}
+  .btn.on{background:linear-gradient(180deg,#C08424,#8A5C13);color:#1A1205;}
+  .btn[disabled]{opacity:.4;}
+
+  .list{display:flex;flex-direction:column;gap:6px;max-height:38vh;overflow-y:auto;}
+  .item{display:flex;align-items:center;gap:8px;background:#22262C;border-radius:6px;padding:9px 10px;}
+  .item b{flex:1;font-weight:400;font-size:12px;letter-spacing:.08em;color:#D5DAE0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .item b.cur{color:var(--lcd-on);}
+  .item small{font-family:ui-monospace,Menlo,monospace;font-size:9px;color:var(--silk-dim);}
+  .mini{background:#3C424B;border:none;border-radius:4px;color:#C6CCD3;font:inherit;font-size:9px;
+    letter-spacing:.12em;text-transform:uppercase;padding:7px 9px;flex:none;}
+  .mini.warn{color:#FFB3AA;}
+
+  .diag{background:var(--lcd-bg);border:1px solid #0A0805;border-radius:5px;padding:10px 11px;
+    box-shadow:inset 0 2px 5px rgba(0,0,0,.8);font-family:ui-monospace,Menlo,monospace;font-size:10.5px;line-height:1.85;}
+  .diag div{display:flex;justify-content:space-between;gap:10px;color:var(--lcd-dim);letter-spacing:.06em;}
+  .diag b{font-weight:400;color:var(--lcd-mid);}
+  .diag .y{color:var(--ok);} .diag .n{color:var(--rec);} .diag .m{color:var(--lcd-on);}
+  .code{background:var(--lcd-bg);border:1px solid #0A0805;border-radius:5px;padding:14px;text-align:center;
+    font-family:ui-monospace,Menlo,monospace;font-size:26px;letter-spacing:.24em;color:var(--lcd-on);
+    box-shadow:inset 0 2px 5px rgba(0,0,0,.8);}
+  .note{font-size:11px;line-height:1.6;letter-spacing:.02em;color:var(--silk-dim);}
+  .note.bad{color:#FFB3AA;}
+  .note b{color:#C6CCD3;font-weight:400;}
+
+  .toast{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 78px);z-index:30;
+    background:#14161A;border:1px solid #2C3138;border-left:3px solid var(--rec);border-radius:5px;
+    padding:11px 12px;font-size:11px;letter-spacing:.04em;line-height:1.55;color:#C6CCD3;
+    opacity:0;transform:translateY(8px);transition:all .22s ease;pointer-events:none;
+    display:flex;align-items:center;gap:10px;}
+  .toast.show{opacity:1;transform:none;pointer-events:auto;}
+  body.sheeting .toast{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 12px);transform:translateY(-8px);}
+  body.sheeting .toast.show{transform:none;}
+  .toast button{flex:none;background:#3C424B;border:none;border-radius:4px;color:#FFD9A8;font:inherit;
+    font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;padding:8px 10px;display:none;}
+  .toast button.show{display:block;}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+  @media (min-width:620px){.unit{max-width:460px;left:50%;right:auto;transform:translateX(-50%);}}
+</style>
+</head>
+<body class="mode-play">
+
+<div class="unit">
+  <div class="brand">
+    <div class="mark"><b>howdoisound</b><span id="boardTag">Board 1</span></div>
+    <div class="power"><span id="pwLed" class="led on"></span>PWR</div>
+  </div>
+
+  <div class="lcd">
+    <div class="lcd-row">
+      <div class="lcd-main" id="lcdMain">READY</div>
+      <div class="lcd-sub" id="lcdSub">9 PADS</div>
+    </div>
+    <canvas id="scope"></canvas>
+    <div class="loopbar" id="loopBar"><i></i></div>
+    <div class="lcd-foot">
+      <span>LEN <i>3.0S</i></span>
+      <span>SRC <i id="lcdIn">--</i></span>
+      <span>MEM <i id="lcdMem">0/9</i></span>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="foot">
+    <button class="util" id="loopBtn">Looper</button>
+    <button class="util" id="stopBtn">Stop</button>
+    <button class="util" id="menuBtn">Menu</button>
+  </div>
+  <div class="foot">
+    <div class="switch">
+      <span class="knob"></span>
+      <button id="mPlay">Play</button>
+      <button id="mRec">Rec</button>
+      <button id="mLoad">Load</button>
+      <button id="mEdit">Edit</button>
+    </div>
+  </div>
+</div>
+
+<!-- pad editor -->
+<div class="sheet" id="editSheet">
+  <div class="card">
+    <h2 id="editTitle">Pad 1</h2>
+    <input id="nameIn" type="text" maxlength="14" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Name this pad">
+    <div class="ctl"><label>Level <i id="volVal">100%</i></label><input type="range" id="volIn" min="0" max="150" value="100"></div>
+    <div class="ctl"><label>Pitch <i id="pitVal">1.00x</i></label><input type="range" id="pitIn" min="50" max="200" value="100"></div>
+    <div class="row">
+      <button class="btn" id="revBtn">Reverse</button>
+      <button class="btn" id="lopBtn">Loop</button>
+    </div>
+    <div class="row">
+      <button class="btn go" id="camBtn">Record</button>
+      <button class="btn" id="importBtn">Camera roll</button>
+    </div>
+    <button class="btn" id="audioBtn">Voice memo or audio file</button>
+    <div class="row">
+      <button class="btn warn" id="clearBtn">Erase pad</button>
+      <button class="btn" id="closeBtn">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- trim -->
+<div class="sheet" id="trimSheet">
+  <div class="card">
+    <h2 id="trimTitle">Pad 1 source</h2>
+    <div class="meta"><span id="trimName">clip</span><span id="trimDur">reading</span></div>
+    <video id="vid" playsinline webkit-playsinline preload="auto"></video>
+    <canvas id="trimWave"></canvas>
+    <input type="range" id="trimPos" min="0" max="1000" value="0" disabled>
+    <div class="meta"><span>Start <i id="trimStart">0:00.0</i></span><span id="trimMode">Reading</span></div>
+    <p class="note" id="trimNote">Opening the clip.</p>
+    <div class="row">
+      <button class="btn" id="trimPrev" disabled>Hear it</button>
+      <button class="btn go" id="trimUse" disabled>Use this</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="trimRoll">Camera roll</button>
+      <button class="btn" id="trimCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- menu -->
+<div class="sheet" id="menuSheet">
+  <div class="card">
+    <h2>Menu</h2>
+    <div class="ctl"><label>Master <i id="masVal">95%</i></label><input type="range" id="masIn" min="0" max="120" value="95"></div>
+    <div class="row">
+      <button class="btn" id="boardsBtn">Boards</button>
+      <button class="btn" id="shareBtn">Share</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="kitBtn">Load kit</button>
+      <button class="btn" id="inputBtn">Input check</button>
+    </div>
+    <button class="btn" id="aboutBtn">About and hosting</button>
+    <button class="btn" id="menuClose">Close</button>
+  </div>
+</div>
+
+<!-- boards -->
+<div class="sheet" id="boardsSheet">
+  <div class="card">
+    <h2>Boards</h2>
+    <div class="list" id="boardList"></div>
+    <div class="row">
+      <button class="btn go" id="newBoard">New board</button>
+      <button class="btn" id="dupBoard">Duplicate</button>
+    </div>
+    <button class="btn" id="boardsClose">Close</button>
+  </div>
+</div>
+
+<!-- share -->
+<div class="sheet" id="shareSheet">
+  <div class="card">
+    <h2>Share this board</h2>
+    <div class="code" id="shareCode">------</div>
+    <p class="note" id="shareNote">Publishing puts a copy of this board where anyone with the code can load it. Do not publish anything private.</p>
+    <button class="btn go" id="publishBtn">Publish board</button>
+    <div class="row">
+      <input id="codeIn" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Enter code">
+      <button class="btn" id="fetchBtn">Load</button>
+    </div>
+    <button class="btn" id="shareClose">Close</button>
+  </div>
+</div>
+
+<!-- about -->
+<div class="sheet" id="aboutSheet">
+  <div class="card">
+    <h2>howdoisound</h2>
+    <p class="note"><b>Nine pads, three seconds each.</b> Record through the camera, pull audio out of any video in your camera roll, or import a voice memo. Trim on the waveform, then play.</p>
+    <p class="note"><b>Looper.</b> Tap Looper to arm, hit pads to lay down a pattern, tap again to close the loop. Anything you play after that gets overdubbed. Tap a third time to clear.</p>
+    <p class="note"><b>Per pad.</b> Edit mode gives you level, pitch from half to double speed, reverse, and sustained loop.</p>
+    <p class="note"><b>Hosting this yourself.</b> This is one self contained HTML file with no dependencies. Drop it on any static host and it runs as howdoisound. Served from your own domain instead of an embedded frame, the browser will grant the microphone directly, so Rec mode records in place with no camera detour.</p>
+    <button class="btn" id="aboutClose">Close</button>
+  </div>
+</div>
+
+<!-- input check -->
+<div class="sheet" id="diagSheet">
+  <div class="card">
+    <h2>Input check</h2>
+    <div class="diag" id="diagBody"></div>
+    <p class="note" id="diagNote">Checking.</p>
+    <div class="row">
+      <button class="btn go" id="diagCam">Record clip</button>
+      <button class="btn" id="diagClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
+<input type="file" id="file" accept="video/*,audio/*" style="display:none">
+<input type="file" id="cam" accept="video/*" capture="user" style="display:none">
+<input type="file" id="aud" accept="audio/*,.m4a,.mp3,.wav,.aac,.caf" style="display:none">
+
+<script>
+(function(){
+  "use strict";
+  var N = 9, LEN = 3;
+  var pads = new Array(N).fill(null);
+  var mode = "play";
+  var ctx = null, master = null, analyser = null, freq = null, masterVol = 0.95;
+  var stream = null, rig = null, recIndex = -1, recTimer = null, raf = null;
+  var chunks = [], samples = 0, monitorUntil = 0, peakSeen = 0;
+  var editIndex = -1, els = [], voices = [];
+  var vidNode = null, vidURL = null, vidTap = null;
+  var srcBuf = null, srcMode = "", srcDur = 0, srcPeaks = null, trimIndex = -1, trimStart = 0;
+  var grabbing = false, previewSrc = null;
+  var micState = "unknown", readVia = "", lastTrace = "";
+  var boards = [], curId = "", curName = "Board 1";
+
+  function $(id){ return document.getElementById(id); }
+  var grid = $("grid"), lcdMain = $("lcdMain"), lcdSub = $("lcdSub");
+  var scope = $("scope"), sctx = scope.getContext("2d");
+  var tw = $("trimWave"), twx = tw.getContext("2d");
+  var vid = $("vid");
+
+  for (var i = 0; i < N; i++) {
+    var b = document.createElement("button");
+    b.className = "pad empty"; b.dataset.i = i;
+    b.innerHTML =
+      '<div class="pad-top"><span class="num">' + (i + 1) + '</span><span class="padled"></span></div>' +
+      '<div><div class="flags"></div><div class="name">Empty</div><div class="wave"></div></div>' +
+      '<span class="count">3</span>';
+    grid.appendChild(b); els.push(b);
+  }
+
+  /* ── Audio core ─────────────────────────── */
+  function ac(){
+    if (!ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain(); master.gain.value = masterVol;
+      analyser = ctx.createAnalyser(); analyser.fftSize = 128; analyser.smoothingTimeConstant = 0.7;
+      freq = new Uint8Array(analyser.frequencyBinCount);
+      master.connect(analyser); analyser.connect(ctx.destination);
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+  function session(t){ try { if (navigator.audioSession) navigator.audioSession.type = t; } catch (e) {} }
+  function decode(ab){
+    return new Promise(function(res, rej){
+      var p = ac().decodeAudioData(ab, res, rej);
+      if (p && p.then) p.then(res, rej);
+    });
+  }
+  function readBuffer(f){
+    if (f.arrayBuffer) return f.arrayBuffer();
+    return new Promise(function(res, rej){
+      var r = new FileReader();
+      r.onload = function(){ res(r.result); };
+      r.onerror = function(){ rej(r.error || new Error("read")); };
+      r.readAsArrayBuffer(f);
+    });
+  }
+
+  /* ══ MP4 / QuickTime audio track extractor ══
+     Safari will not hand over the audio from an iPhone clip inside this
+     frame, so the container is parsed here: find the sound track, read
+     its sample tables, lift each raw AAC frame out of mdat and wrap it
+     in an ADTS header. decodeAudioData takes that without argument. */
+  var FREQ = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
+
+  function extractAAC(ab){
+    var v = new DataView(ab), u8 = new Uint8Array(ab), end = ab.byteLength;
+    function s4(o){ return String.fromCharCode(u8[o], u8[o+1], u8[o+2], u8[o+3]); }
+    function boxes(from, to, cb){
+      var p = from;
+      while (p + 8 <= to) {
+        var size = v.getUint32(p), type = s4(p + 4), hdr = 8;
+        if (size === 1) {
+          if (p + 16 > to) break;
+          size = v.getUint32(p + 8) * 4294967296 + v.getUint32(p + 12); hdr = 16;
+        } else if (size === 0) size = to - p;
+        if (size < hdr || p + size > to) break;
+        if (cb(type, p + hdr, p + size) === false) return;
+        p += size;
+      }
+    }
+    function find(from, to, type){
+      var r = null;
+      boxes(from, to, function(t, s, e){ if (t === type) { r = [s, e]; return false; } });
+      return r;
+    }
+    var moov = find(0, end, "moov");
+    if (!moov) throw new Error("no moov atom");
+    var stbl = null;
+    boxes(moov[0], moov[1], function(t, s, e){
+      if (t !== "trak") return;
+      var mdia = find(s, e, "mdia"); if (!mdia) return;
+      var hdlr = find(mdia[0], mdia[1], "hdlr"); if (!hdlr) return;
+      if (s4(hdlr[0] + 8) !== "soun") return;
+      var minf = find(mdia[0], mdia[1], "minf"); if (!minf) return;
+      var st = find(minf[0], minf[1], "stbl"); if (!st) return;
+      stbl = st; return false;
+    });
+    if (!stbl) throw new Error("no sound track");
+
+    var stsd = find(stbl[0], stbl[1], "stsd");
+    if (!stsd) throw new Error("no stsd");
+    var ep = stsd[0] + 8, esize = v.getUint32(ep), fmt = s4(ep + 4);
+    if (fmt !== "mp4a") throw new Error("audio is " + fmt + ", not aac");
+    var sver = v.getUint16(ep + 16), chan = v.getUint16(ep + 24) || 2, rate = v.getUint16(ep + 32) || 44100;
+    var child = ep + 36;
+    if (sver === 1) child += 16; else if (sver === 2) child += 36;
+
+    var asc = null;
+    function readEsds(s, e){
+      var p = s + 4;
+      while (p < e) {
+        var tag = u8[p++], len = 0, b, guard = 0;
+        do { b = u8[p++]; len = (len << 7) | (b & 0x7F); guard++; } while ((b & 0x80) && p < e && guard < 4);
+        if (tag === 3) { p += 2; var fl = u8[p++]; if (fl & 0x80) p += 2; if (fl & 0x40) p += 1 + u8[p]; if (fl & 0x20) p += 2; continue; }
+        if (tag === 4) { p += 13; continue; }
+        if (tag === 5) return [u8[p], u8[p + 1]];
+        p += len;
+      }
+      return null;
+    }
+    (function scan(from, to){
+      boxes(from, to, function(t, s, e){
+        if (t === "esds" && !asc) { asc = readEsds(s, e); if (asc) return false; }
+        else if (t === "wave") scan(s, e);
+      });
+    })(child, ep + esize);
+
+    var aot, freqIdx, chCfg;
+    if (asc) {
+      aot = (asc[0] >> 3) & 0x1F;
+      freqIdx = ((asc[0] & 0x07) << 1) | ((asc[1] >> 7) & 0x01);
+      chCfg = (asc[1] >> 3) & 0x0F;
+    } else { aot = 2; chCfg = chan; freqIdx = FREQ.indexOf(rate); }
+    if (aot === 31) throw new Error("extended aac profile");
+    if (freqIdx < 0 || freqIdx > 12) freqIdx = FREQ.indexOf(rate) >= 0 ? FREQ.indexOf(rate) : 4;
+    if (!chCfg) chCfg = chan > 0 && chan < 8 ? chan : 2;
+
+    var stsz = find(stbl[0], stbl[1], "stsz");
+    if (!stsz) throw new Error("no stsz");
+    var p = stsz[0] + 4, uniform = v.getUint32(p), count = v.getUint32(p + 4);
+    p += 8;
+    var sizes = new Uint32Array(count);
+    if (uniform) { for (var a1 = 0; a1 < count; a1++) sizes[a1] = uniform; }
+    else { for (var a2 = 0; a2 < count; a2++) { sizes[a2] = v.getUint32(p); p += 4; } }
+
+    var co = find(stbl[0], stbl[1], "stco"), wide = false;
+    if (!co) { co = find(stbl[0], stbl[1], "co64"); wide = true; }
+    if (!co) throw new Error("no chunk offsets");
+    p = co[0] + 4;
+    var cn = v.getUint32(p); p += 4;
+    var offs = new Array(cn);
+    for (var c = 0; c < cn; c++) {
+      offs[c] = wide ? v.getUint32(p) * 4294967296 + v.getUint32(p + 4) : v.getUint32(p);
+      p += wide ? 8 : 4;
+    }
+    var stsc = find(stbl[0], stbl[1], "stsc");
+    if (!stsc) throw new Error("no stsc");
+    p = stsc[0] + 4;
+    var rn = v.getUint32(p); p += 4;
+    var runs = [];
+    for (var r = 0; r < rn; r++) { runs.push([v.getUint32(p), v.getUint32(p + 4)]); p += 12; }
+
+    var starts = new Float64Array(count), si = 0;
+    for (var q = 0; q < runs.length && si < count; q++) {
+      var firstChunk = runs[q][0], spc = runs[q][1];
+      var lastChunk = (q + 1 < runs.length) ? runs[q + 1][0] - 1 : cn;
+      for (var ch2 = firstChunk; ch2 <= lastChunk && si < count; ch2++) {
+        var o = offs[ch2 - 1];
+        if (o === undefined) break;
+        for (var k = 0; k < spc && si < count; k++) { starts[si] = o; o += sizes[si]; si++; }
+      }
+    }
+    if (!si) throw new Error("no audio samples");
+
+    var total = 0;
+    for (var t2 = 0; t2 < si; t2++) total += 7 + sizes[t2];
+    var out = new Uint8Array(total), w = 0, profile = (aot - 1) & 3;
+    for (var m = 0; m < si; m++) {
+      var flen = sizes[m] + 7, off = starts[m];
+      if (off + sizes[m] > end) break;
+      out[w++] = 0xFF; out[w++] = 0xF1;
+      out[w++] = (profile << 6) | ((freqIdx & 0x0F) << 2) | ((chCfg >> 2) & 0x01);
+      out[w++] = ((chCfg & 0x03) << 6) | ((flen >> 11) & 0x03);
+      out[w++] = (flen >> 3) & 0xFF;
+      out[w++] = ((flen & 0x07) << 5) | 0x1F;
+      out[w++] = 0xFC;
+      out.set(u8.subarray(off, off + sizes[m]), w);
+      w += sizes[m];
+    }
+    if (w < 64) throw new Error("empty audio track");
+    return out.buffer.slice(0, w);
+  }
+
+  /* ── Analysis ───────────────────────────── */
+  function peaksOf(buf, n){
+    var d = buf.getChannelData(0);
+    var len = Math.min(d.length, Math.floor(buf.sampleRate * LEN));
+    var step = Math.max(1, Math.floor(len / n)), out = [], max = 0.0001;
+    for (var i = 0; i < n; i++) {
+      var m = 0, end = Math.min(len, (i + 1) * step);
+      for (var j = i * step; j < end; j++) { var v = Math.abs(d[j]); if (v > m) m = v; }
+      out.push(m); if (m > max) max = m;
+    }
+    return out.map(function(v){ return Math.max(0.07, v / max); });
+  }
+  function overview(buf, n){
+    var d = buf.getChannelData(0), step = Math.max(1, Math.floor(d.length / n)), out = [], max = 0.0001;
+    for (var i = 0; i < n; i++) {
+      var m = 0, end = Math.min(d.length, (i + 1) * step);
+      for (var j = i * step; j < end; j += 3) { var v = Math.abs(d[j]); if (v > m) m = v; }
+      out.push(m); if (m > max) max = m;
+    }
+    return out.map(function(v){ return v / max; });
+  }
+  function monoSlice(src, startSec, c){
+    var rate = src.sampleRate, start = Math.max(0, Math.floor(startSec * rate));
+    var n = Math.min(Math.floor(LEN * rate), src.length - start);
+    if (n < 1) return null;
+    var out = c.createBuffer(1, n, rate), o = out.getChannelData(0), chs = [];
+    for (var ch = 0; ch < src.numberOfChannels; ch++) chs.push(src.getChannelData(ch));
+    for (var i = 0; i < n; i++) {
+      var s = 0;
+      for (var k = 0; k < chs.length; k++) s += chs[k][start + i];
+      o[i] = s / chs.length;
+    }
+    return out;
+  }
+  function normalize(buf){
+    var d = buf.getChannelData(0), pk = 0;
+    for (var i = 0; i < d.length; i++) { var v = d[i] < 0 ? -d[i] : d[i]; if (v > pk) pk = v; }
+    if (pk < 0.004) return 0;
+    if (pk < 0.55) { var g = 0.9 / pk; for (var k = 0; k < d.length; k++) d[k] *= g; }
+    return pk;
+  }
+  function reversed(p){
+    if (p.revBuf) return p.revBuf;
+    var c = ac(), s = p.buffer, out = c.createBuffer(1, s.length, s.sampleRate);
+    var a = s.getChannelData(0), b = out.getChannelData(0), n = s.length;
+    for (var i = 0; i < n; i++) b[i] = a[n - 1 - i];
+    p.revBuf = out; return out;
+  }
+
+  /* ── Voices ─────────────────────────────── */
+  function padPlaying(i){
+    for (var k = 0; k < voices.length; k++) if (voices[k].i === i) return true;
+    return false;
+  }
+  function drop(v){
+    var k = voices.indexOf(v);
+    if (k >= 0) voices.splice(k, 1);
+    if (!padPlaying(v.i)) els[v.i].classList.remove("lit");
+  }
+  function fire(i){
+    var p = pads[i];
+    if (!p || !p.buffer) { flashEmpty(i); return; }
+    session("playback");
+    var c = ac();
+    if (p.loop && padPlaying(i)) { stopPad(i); say("STOP " + label(i), "LOOP OFF"); return; }
+    var buf = p.rev ? reversed(p) : p.buffer;
+    var src = c.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = p.pitch;
+    src.loop = !!p.loop;
+    var g = c.createGain(), now = c.currentTime;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(p.vol, now + 0.005);
+    src.connect(g); g.connect(master);
+    src.start(now);
+    var v = { src: src, g: g, i: i };
+    voices.push(v);
+    runScope();
+    var el = els[i];
+    el.classList.add("hit", "lit");
+    setTimeout(function(){ el.classList.remove("hit"); }, 90);
+    if (!p.loop) {
+      var dur = buf.duration / p.pitch;
+      g.gain.setValueAtTime(p.vol, now + Math.max(0.02, dur - 0.01));
+      g.gain.linearRampToValueAtTime(0.0001, now + dur);
+      try { src.stop(now + dur + 0.03); } catch (e) {}
+      src.onended = function(){ drop(v); };
+      say("PLAY " + label(i), fmt(dur) + "S");
+    } else {
+      say("LOOP " + label(i), "TAP TO STOP");
+    }
+  }
+  function stopPad(i){
+    var c = ac(), now = c.currentTime;
+    for (var k = voices.length - 1; k >= 0; k--) {
+      var v = voices[k];
+      if (v.i !== i) continue;
+      try {
+        v.g.gain.cancelScheduledValues(now);
+        v.g.gain.setValueAtTime(v.g.gain.value, now);
+        v.g.gain.linearRampToValueAtTime(0.0001, now + 0.04);
+        v.src.stop(now + 0.06);
+      } catch (e) {}
+      voices.splice(k, 1);
+    }
+    els[i].classList.remove("lit");
+  }
+  function stopAll(){
+    for (var i = 0; i < N; i++) stopPad(i);
+    if (looper.state !== "idle") looperReset();
+    say("ALL STOPPED", "READY");
+  }
+  function flashEmpty(i){
+    var el = els[i];
+    el.classList.add("hit");
+    setTimeout(function(){ el.classList.remove("hit"); }, 110);
+    say("PAD " + (i + 1) + " EMPTY", "USE LOAD OR REC");
+  }
+
+  /* ── Looper ─────────────────────────────── */
+  var looper = { state: "idle", events: [], len: 0, t0: 0, start: 0, timer: null, last: 0 };
+  function looperTap(){
+    ac();
+    if (looper.state === "idle") {
+      looper.state = "rec"; looper.events = []; looper.t0 = 0;
+      $("loopBtn").className = "util armed";
+      $("loopBar").className = "loopbar on";
+      say("LOOPER ARMED", "HIT A PAD");
+      return;
+    }
+    if (looper.state === "rec") {
+      if (!looper.events.length) { looperReset(); say("NOTHING RECORDED", "READY"); return; }
+      looper.len = Math.max(600, performance.now() - looper.t0);
+      looper.state = "play"; looper.start = performance.now(); looper.last = 0;
+      looper.events.sort(function(a, b){ return a.t - b.t; });
+      $("loopBtn").className = "util rolling";
+      say("LOOP ROLLING", (looper.len / 1000).toFixed(1) + "S");
+      looper.timer = setInterval(looperTick, 16);
+      return;
+    }
+    looperReset(); say("LOOP CLEARED", "READY");
+  }
+  function looperReset(){
+    clearInterval(looper.timer);
+    looper.state = "idle"; looper.events = []; looper.len = 0; looper.t0 = 0;
+    $("loopBtn").className = "util";
+    $("loopBar").className = "loopbar";
+    $("loopBar").firstChild.style.width = "0%";
+  }
+  function looperNote(i){
+    if (looper.state === "rec") {
+      if (!looper.t0) looper.t0 = performance.now();
+      looper.events.push({ t: performance.now() - looper.t0, i: i });
+    } else if (looper.state === "play") {
+      var pos = (performance.now() - looper.start) % looper.len;
+      looper.events.push({ t: pos, i: i });
+      looper.events.sort(function(a, b){ return a.t - b.t; });
+    }
+  }
+  function looperTick(){
+    var pos = (performance.now() - looper.start) % looper.len;
+    $("loopBar").firstChild.style.width = (pos / looper.len * 100) + "%";
+    var from = looper.last, to = pos;
+    if (to < from) { scan(from, looper.len); scan(0, to); }
+    else scan(from, to);
+    looper.last = pos;
+    function scan(a, b){
+      for (var k = 0; k < looper.events.length; k++) {
+        var e = looper.events[k];
+        if (e.t >= a && e.t < b) fire(e.i);
+      }
+    }
+  }
+
+  /* ── Mic ────────────────────────────────── */
+  function probeMic(){
+    if (!window.isSecureContext) { micState = "insecure"; return Promise.reject(new Error("insecure")); }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { micState = "missing"; return Promise.reject(new Error("missing")); }
+    if (stream && stream.active) return Promise.resolve(stream);
+    var t0 = performance.now();
+    return navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true }
+    }).then(function(s){ micState = "ok"; stream = s; return s; }, function(err){
+      var dt = performance.now() - t0, name = err && err.name;
+      if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") micState = dt < 400 ? "sandboxed" : "denied";
+      else if (name === "NotFoundError") micState = "nodevice";
+      else micState = "failed";
+      throw err;
+    });
+  }
+  function openRig(){
+    return probeMic().then(function(s){
+      if (rig) return rig;
+      var c = ac();
+      var src = c.createMediaStreamSource(s);
+      var an = c.createAnalyser(); an.fftSize = 128;
+      var data = new Uint8Array(an.frequencyBinCount);
+      var proc = c.createScriptProcessor(4096, 1, 1);
+      var mute = c.createGain(); mute.gain.value = 0;
+      proc.onaudioprocess = function(e){
+        var inp = e.inputBuffer.getChannelData(0), pk = 0;
+        for (var k = 0; k < inp.length; k += 8) { var v = inp[k] < 0 ? -inp[k] : inp[k]; if (v > pk) pk = v; }
+        if (pk > peakSeen) peakSeen = pk;
+        if (recIndex === -1) return;
+        var copy = new Float32Array(inp.length); copy.set(inp);
+        chunks.push(copy); samples += copy.length;
+        if (samples >= Math.ceil(c.sampleRate * LEN)) stopRec();
+      };
+      src.connect(an); an.connect(proc); proc.connect(mute); mute.connect(c.destination);
+      rig = { src: src, an: an, data: data, proc: proc, mute: mute };
+      return rig;
+    });
+  }
+  function closeRig(){
+    if (rig) {
+      try { rig.proc.onaudioprocess = null; rig.proc.disconnect(); rig.mute.disconnect(); rig.an.disconnect(); rig.src.disconnect(); } catch (e) {}
+      rig = null;
+    }
+    if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
+  }
+  function recordPad(i){
+    if (micState === "sandboxed" || micState === "denied" || micState === "missing" || micState === "insecure" || micState === "nodevice") {
+      say("MIC UNAVAILABLE", "USING CAMERA"); camFor(i); return;
+    }
+    startRec(i);
+  }
+  function startRec(i){
+    if (recIndex !== -1) return;
+    ac(); session("play-and-record");
+    say("ARMING PAD " + (i + 1), "ALLOW MIC");
+    openRig().then(function(){
+      $("lcdIn").textContent = "MIC";
+      chunks = []; samples = 0; peakSeen = 0; recIndex = i;
+      els[i].classList.add("arm");
+      $("pwLed").className = "led rec";
+      var t0 = performance.now(), cell = els[i].querySelector(".count");
+      runScope();
+      recTimer = setInterval(function(){
+        var left = Math.max(0, LEN - (performance.now() - t0) / 1000);
+        cell.textContent = Math.ceil(left) || 0;
+        say("REC PAD " + (i + 1), fmt(left) + "S LEFT");
+      }, 90);
+    }).catch(function(){
+      session("playback"); say("MIC UNAVAILABLE", "USING CAMERA"); camFor(i);
+    });
+  }
+  function stopRec(){
+    if (recIndex === -1) return;
+    var i = recIndex; recIndex = -1;
+    clearInterval(recTimer);
+    els[i].classList.remove("arm");
+    $("pwLed").className = "led on";
+    session("playback");
+    var c = ac(), total = Math.min(samples, Math.ceil(c.sampleRate * LEN));
+    if (total < 1000) { chunks = []; samples = 0; closeRig(); say("TAKE TOO SHORT", "TRY AGAIN"); return; }
+    var buf = c.createBuffer(1, total, c.sampleRate), out = buf.getChannelData(0), off = 0;
+    for (var k = 0; k < chunks.length && off < total; k++) {
+      var ch = chunks[k], n = Math.min(ch.length, total - off);
+      for (var j = 0; j < n; j++) out[off + j] = ch[j];
+      off += n;
+    }
+    chunks = []; samples = 0; closeRig();
+    if (!normalize(buf)) { say("SILENT TAKE", "TRY CAMERA"); toast("The mic returned silence.", "Camera", function(){ camFor(i); }); return; }
+    commit(i, buf, null);
+    say("SAVED " + label(i), "TAP TO HEAR");
+  }
+
+  /* ── Diagnostic ─────────────────────────── */
+  function storedKB(){
+    var b = 0;
+    for (var i = 0; i < N; i++) if (pads[i] && pads[i].wav) b += pads[i].wav.length * 0.75;
+    return Math.round(b / 1024);
+  }
+  function runDiag(){
+    ac();
+    var body = $("diagBody"), note = $("diagNote"), framed = window.self !== window.top;
+    function line(k, v, cls){ return '<div><b>' + k + '</b><span class="' + cls + '">' + v + '</span></div>'; }
+    function base(micVal, micGood){
+      return line("SECURE PAGE", window.isSecureContext ? "YES" : "NO", window.isSecureContext ? "y" : "n") +
+        line("EMBEDDED", framed ? "YES" : "NO", framed ? "n" : "y") +
+        line("PAGE MIC", micVal, micGood ? "y" : "n") +
+        line("AAC EXTRACT", "READY", "y") +
+        line("LAST READ", readVia || "NONE", readVia ? "y" : "m") +
+        line("BOARD", storedKB() + " KB", "m");
+    }
+    body.innerHTML = base("TESTING", true);
+    note.className = "note"; note.textContent = "Testing the page microphone.";
+    openAny("diagSheet");
+    probeMic().then(function(){
+      body.innerHTML = base("GRANTED", true);
+      note.textContent = "The microphone is available. Rec mode captures three seconds directly.";
+      closeRig();
+    }).catch(function(){
+      var val = micState === "sandboxed" ? "BLOCKED BY HOST" : micState === "denied" ? "DENIED"
+        : micState === "nodevice" ? "NO DEVICE" : micState === "insecure" ? "INSECURE PAGE" : "UNAVAILABLE";
+      body.innerHTML = base(val, false);
+      note.className = "note";
+      note.textContent = "The frame this page runs in was never granted microphone permission. Record goes through the camera instead, and the audio track is parsed out of the clip here. Hosting this file on your own domain removes the restriction entirely.";
+    });
+  }
+
+  /* ── Sources ────────────────────────────── */
+  function camFor(i){ trimIndex = i; $("lcdIn").textContent = "CAM"; say("CAMERA RECORDER", "AUDIO ONLY IS KEPT"); $("cam").click(); }
+  function pickFor(i){ trimIndex = i; $("lcdIn").textContent = "ROLL"; $("file").click(); }
+  function audioFor(i){ trimIndex = i; $("lcdIn").textContent = "FILE"; $("aud").click(); }
+  function shortName(n){ n = n || "clip"; return n.length > 24 ? n.slice(0, 22) + ".." : n; }
+
+  var MEDIA_ERR = { 1: "load aborted", 2: "network error", 3: "decode error", 4: "format refused" };
+  function attachMedia(url){
+    return new Promise(function(res, rej){
+      var done = false, t;
+      function ok(){ if (done) return; done = true; clean(); var d = vid.duration; res(isFinite(d) && d > 0 ? d : 0); }
+      function bad(){ if (done) return; done = true; clean(); rej(new Error(MEDIA_ERR[vid.error ? vid.error.code : 0] || "refused")); }
+      function clean(){ clearTimeout(t); vid.onloadedmetadata = vid.onloadeddata = vid.oncanplay = vid.ondurationchange = vid.onerror = null; }
+      vid.onloadedmetadata = ok; vid.onloadeddata = ok; vid.oncanplay = ok; vid.ondurationchange = ok;
+      vid.onerror = bad;
+      t = setTimeout(function(){ if (vid.readyState >= 1) ok(); else bad(); }, 9000);
+      vid.src = url;
+      try { vid.load(); } catch (e) {}
+    });
+  }
+  function toDataURL(ab, type){
+    var bytes = new Uint8Array(ab), bin = "";
+    for (var q = 0; q < bytes.length; q += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(q, q + 8192));
+    return "data:" + type + ";base64," + btoa(bin);
+  }
+
+  function onFile(f){
+    var i = trimIndex;
+    if (!f || i < 0) return;
+    ac();
+    srcBuf = null; srcMode = ""; srcPeaks = null; srcDur = 0; trimStart = 0; readVia = ""; lastTrace = "";
+    stopPreview(); vid.classList.remove("show");
+    var mb = Math.round((f.size / 1048576) * 10) / 10;
+    $("trimTitle").textContent = "Pad " + (i + 1) + " source";
+    $("trimName").textContent = shortName(f.name);
+    $("trimDur").textContent = mb + " MB";
+    $("trimStart").textContent = "0:00.0";
+    $("trimMode").textContent = "Reading";
+    $("trimPos").value = 0; $("trimPos").disabled = true;
+    $("trimPrev").disabled = true; $("trimUse").disabled = true;
+    setNote("Reading the container.", false);
+    openAny("trimSheet");
+    setTimeout(drawTrim, 30);
+    say("READING CLIP", mb + " MB");
+
+    if (!f.size) { failClip("iOS handed back an empty file."); return; }
+    if (f.type && f.type.indexOf("image/") === 0) { failClip("That is a photo, not a video or audio file."); return; }
+
+    function onDecoded(buf, how){
+      srcBuf = buf; srcMode = "buffer"; srcDur = buf.duration; srcPeaks = overview(buf, 64);
+      readVia = how; readyTrim();
+    }
+    readBuffer(f).then(function(ab){
+      var aac = null;
+      try { aac = extractAAC(ab); } catch (e) { lastTrace += "extract: " + e.message + ". "; }
+      if (aac) {
+        return decode(aac).then(function(buf){ onDecoded(buf, "AAC EXTRACT"); }, function(){
+          lastTrace += "aac decode refused. "; return fallback(ab);
+        });
+      }
+      return fallback(ab);
+    }, function(){ failClip("The file could not be read off disk."); });
+
+    function fallback(ab){
+      return decode(ab.slice(0)).then(function(buf){ onDecoded(buf, "DIRECT DECODE"); }, function(){
+        lastTrace += "direct decode refused. ";
+        var tries = [];
+        if (ab.byteLength <= 12000000) tries.push(function(){ return attachMedia(toDataURL(ab, "video/mp4")); });
+        tries.push(function(){
+          if (vidURL) { try { URL.revokeObjectURL(vidURL); } catch (e) {} }
+          vidURL = URL.createObjectURL(f.slice(0, f.size, "video/mp4"));
+          return attachMedia(vidURL);
+        });
+        tries.push(function(){
+          if (vidURL) { try { URL.revokeObjectURL(vidURL); } catch (e) {} }
+          vidURL = URL.createObjectURL(f);
+          return attachMedia(vidURL);
+        });
+        var k = 0;
+        function next(){
+          if (k >= tries.length) throw new Error("all readers refused");
+          var fn = tries[k++];
+          return Promise.resolve().then(fn).then(function(dur){
+            srcMode = "live"; srcDur = dur || LEN; readVia = "MEDIA ELEMENT";
+            vid.classList.add("show"); readyTrim();
+          }, function(e){ lastTrace += "element: " + e.message + ". "; return next(); });
+        }
+        return next();
+      });
+    }
+  }
+
+  function setNote(text, bad){
+    var n = $("trimNote");
+    n.className = bad ? "note bad" : "note";
+    n.textContent = text;
+  }
+  function failClip(msg){
+    srcMode = "";
+    $("trimMode").textContent = "Cannot read";
+    $("trimPos").disabled = true; $("trimPrev").disabled = true; $("trimUse").disabled = true;
+    setNote(msg + (lastTrace ? " Trace: " + lastTrace : ""), true);
+    say("CANNOT READ CLIP", "SEE PANEL");
+  }
+  function readyTrim(){
+    if (srcDur <= 0) srcDur = LEN;
+    var maxStart = Math.max(0, srcDur - LEN);
+    trimStart = 0;
+    $("trimDur").textContent = clock(srcDur);
+    $("trimPos").value = 0;
+    $("trimPos").disabled = maxStart <= 0;
+    $("trimStart").textContent = clock(0, true);
+    $("trimUse").disabled = false;
+    if (srcMode === "buffer") {
+      $("trimMode").textContent = readVia;
+      $("trimPrev").disabled = false; $("trimPrev").textContent = "Hear it";
+      setNote("Audio track read. Drag to move the lit window, then Use this.", false);
+      say("PICK 3 SECONDS", clock(srcDur) + " CLIP");
+    } else {
+      $("trimMode").textContent = "Real time";
+      $("trimPrev").disabled = true; $("trimPrev").textContent = "No preview";
+      setNote("Read through the player. Use this plays " + (srcDur < LEN ? fmt(srcDur) : "3.0") + " seconds and keeps the audio.", false);
+      say("PICK A START", "REAL TIME GRAB");
+    }
+    drawTrim();
+  }
+  function closeTrim(){ closeAny("trimSheet"); stopPreview(); try { vid.pause(); } catch (e) {} }
+  function drawTrim(){
+    var r = tw.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    tw.width = Math.max(1, Math.round(r.width * dpr));
+    tw.height = Math.max(1, Math.round(r.height * dpr));
+    var w = tw.width, h = tw.height, cols = 64, cw = w / cols;
+    var dot = Math.max(1.4 * dpr, cw * 0.36), rows = Math.max(4, Math.floor(h / (dot * 2.1)));
+    var a = srcDur > 0 ? trimStart / srcDur : 0, b = srcDur > 0 ? Math.min(1, (trimStart + LEN) / srcDur) : 1;
+    twx.clearRect(0, 0, w, h);
+    for (var x = 0; x < cols; x++) {
+      var frac = x / cols, v = srcPeaks ? srcPeaks[x] : 0.3, inWin = frac >= a && frac < b;
+      var lit = Math.max(1, Math.round(v * rows));
+      for (var y = 0; y < rows; y++) {
+        twx.fillStyle = y < lit
+          ? (inWin ? "rgba(255,169,46,.95)" : "rgba(255,169,46,.30)")
+          : (inWin ? "rgba(255,169,46,.16)" : "rgba(255,169,46,.07)");
+        twx.beginPath();
+        twx.arc(cw * x + cw / 2, h - y * (h / rows) - (h / rows) / 2, dot / 2, 0, 6.284);
+        twx.fill();
+      }
+    }
+  }
+  function stopPreview(){
+    if (previewSrc) { try { previewSrc.stop(); } catch (e) {} previewSrc = null; }
+  }
+  function preview(){
+    if (srcMode !== "buffer" || !srcBuf) return;
+    stopPreview();
+    var c = ac(), slice = monoSlice(srcBuf, trimStart, c);
+    if (!slice) return;
+    var s = c.createBufferSource(); s.buffer = slice; s.connect(master); s.start();
+    previewSrc = s; runScope();
+    s.onended = function(){ if (previewSrc === s) previewSrc = null; };
+  }
+  function useSelection(){
+    var i = trimIndex;
+    if (i < 0 || !srcMode) return;
+    if (srcMode === "buffer") {
+      var c = ac(), slice = monoSlice(srcBuf, trimStart, c);
+      if (!slice) { setNote("That part of the clip is empty.", true); return; }
+      if (!normalize(slice)) { setNote("There is no audio in that window. Move the slider.", true); return; }
+      commit(i, slice, null); closeTrim();
+      say("LOADED PAD " + (i + 1), "TAP TO HEAR");
+      return;
+    }
+    grabLive(i);
+  }
+  function grabLive(i){
+    if (grabbing) return;
+    grabbing = true;
+    var c = ac();
+    session("playback");
+    vid.muted = false; vid.volume = 1;
+    if (!vidNode) {
+      try { vidNode = c.createMediaElementSource(vid); }
+      catch (e) { grabbing = false; setNote("This clip cannot be routed for capture.", true); return; }
+    }
+    var span = Math.min(LEN, Math.max(0.3, srcDur - trimStart));
+    var proc = c.createScriptProcessor(4096, 1, 1);
+    var mon = c.createGain(); mon.gain.value = 0.85;
+    var sink = c.createGain(); sink.gain.value = 0;
+    var got = [], n = 0, want = Math.ceil(c.sampleRate * span), done = false;
+    proc.onaudioprocess = function(e){
+      var inp = e.inputBuffer.getChannelData(0), copy = new Float32Array(inp.length);
+      copy.set(inp); got.push(copy); n += copy.length;
+      if (n >= want) finish();
+    };
+    vidNode.connect(mon); mon.connect(master);
+    vidNode.connect(proc); proc.connect(sink); sink.connect(c.destination);
+    function finish(){
+      if (done) return; done = true;
+      clearInterval(vidTap);
+      try { vid.pause(); proc.onaudioprocess = null; proc.disconnect(); sink.disconnect(); mon.disconnect(); vidNode.disconnect(); } catch (e) {}
+      grabbing = false;
+      var total = Math.min(n, want);
+      if (total < 1000) { setNote("Nothing came through.", true); return; }
+      var buf = c.createBuffer(1, total, c.sampleRate), out = buf.getChannelData(0), off = 0;
+      for (var k = 0; k < got.length && off < total; k++) {
+        var ch = got[k], m = Math.min(ch.length, total - off);
+        for (var j = 0; j < m; j++) out[off + j] = ch[j];
+        off += m;
+      }
+      if (!normalize(buf)) { setNote("Only silence came through.", true); return; }
+      commit(i, buf, null); closeTrim();
+      say("LOADED PAD " + (i + 1), "TAP TO HEAR");
+    }
+    setNote("Grabbing. Leave this open for " + fmt(span) + " seconds.", false);
+    say("GRABBING " + fmt(span) + "S", "PLAYING CLIP");
+    try { vid.currentTime = trimStart; } catch (e) {}
+    var p = vid.play();
+    if (p && p.catch) p.catch(function(){
+      grabbing = false; done = true; clearInterval(vidTap);
+      try { proc.disconnect(); vidNode.disconnect(); } catch (e) {}
+      setNote("iOS blocked playback of this clip.", true);
+    });
+    vidTap = setInterval(function(){
+      var left = Math.max(0, span - (vid.currentTime - trimStart));
+      say("GRABBING " + fmt(left) + "S", "PLAYING CLIP");
+      if (vid.ended || vid.currentTime >= trimStart + span + 0.15) finish();
+    }, 120);
+    setTimeout(finish, span * 1000 + 1600);
+  }
+
+  /* ── Commit and encode ──────────────────── */
+  function commit(i, buf, kitIdx){
+    var old = pads[i];
+    pads[i] = {
+      name: (old && old.name) || (kitIdx !== null && kitIdx !== undefined ? KIT[kitIdx] : ""),
+      peaks: peaksOf(buf, 14), buffer: buf, wav: null,
+      vol: old ? old.vol : 1, pitch: old ? old.pitch : 1, rev: old ? old.rev : false, loop: old ? old.loop : false
+    };
+    if (kitIdx !== null && kitIdx !== undefined) pads[i].kit = kitIdx;
+    paint(i);
+    els[i].classList.add("lit");
+    setTimeout(function(){ if (!padPlaying(i)) els[i].classList.remove("lit"); }, 400);
+    if (kitIdx === null || kitIdx === undefined) encode(i); else saveBoard();
+  }
+  function encode(i){
+    var p = pads[i]; if (!p || !p.buffer) return;
+    var buf = p.buffer, src = buf.getChannelData(0), rate = buf.sampleRate;
+    var f = rate >= 32000 ? 2 : 1, outRate = Math.round(rate / f), n = Math.floor(buf.length / f);
+    var ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
+    function str(o, t){ for (var k = 0; k < t.length; k++) v.setUint8(o + k, t.charCodeAt(k)); }
+    str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVEfmt ");
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, outRate, true); v.setUint32(28, outRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, "data"); v.setUint32(40, n * 2, true);
+    for (var k = 0; k < n; k++) {
+      var s = 0;
+      for (var j = 0; j < f; j++) s += src[k * f + j] || 0;
+      s /= f;
+      var x = s < -1 ? -1 : s > 1 ? 1 : s;
+      v.setInt16(44 + k * 2, x < 0 ? x * 0x8000 : x * 0x7FFF, true);
+    }
+    var bytes = new Uint8Array(ab), bin = "";
+    for (var q = 0; q < bytes.length; q += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(q, q + 8192));
+    p.wav = btoa(bin);
+    saveBoard();
+  }
+
+  /* ── Kit ────────────────────────────────── */
+  var KIT = ["KICK","SNARE","HAT","CLAP","TOM","ZAP","BLIP","SWEEP","SUB"];
+  function offline(dur){
+    var OC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    return new OC(1, Math.ceil(44100 * dur), 44100);
+  }
+  function render(c){
+    return new Promise(function(res, rej){
+      c.oncomplete = function(e){ res(e.renderedBuffer); };
+      var p = c.startRendering();
+      if (p && p.then) p.then(res, rej);
+    });
+  }
+  function noiseSrc(c, dur){
+    var b = c.createBuffer(1, Math.ceil(c.sampleRate * dur), c.sampleRate), d = b.getChannelData(0);
+    for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    var s = c.createBufferSource(); s.buffer = b; return s;
+  }
+  function eg(c, t, a, dcy, peak){
+    var g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + a + dcy);
+    return g;
+  }
+  function kit(idx){
+    var dur = [0.5,0.35,0.16,0.4,0.5,0.4,0.2,1.2,1.0][idx], c = offline(dur), t = 0, g;
+    if (idx === 0) {
+      var o = c.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(155, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.13);
+      g = eg(c, t, 0.002, 0.4, 1); o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur);
+    } else if (idx === 1) {
+      var nz = noiseSrc(c, dur), hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1300;
+      g = eg(c, t, 0.001, 0.19, 0.75); nz.connect(hp); hp.connect(g); g.connect(c.destination); nz.start(t);
+      var tone = c.createOscillator(); tone.type = "triangle"; tone.frequency.value = 190;
+      var g2 = eg(c, t, 0.001, 0.1, 0.45); tone.connect(g2); g2.connect(c.destination); tone.start(t); tone.stop(t + dur);
+    } else if (idx === 2) {
+      var n2 = noiseSrc(c, dur), hp2 = c.createBiquadFilter(); hp2.type = "highpass"; hp2.frequency.value = 8200;
+      g = eg(c, t, 0.001, 0.06, 0.5); n2.connect(hp2); hp2.connect(g); g.connect(c.destination); n2.start(t);
+    } else if (idx === 3) {
+      [0, 0.012, 0.026, 0.045].forEach(function(o2, k){
+        var n3 = noiseSrc(c, 0.2), bp = c.createBiquadFilter();
+        bp.type = "bandpass"; bp.frequency.value = 1500; bp.Q.value = 1.3;
+        var gg = eg(c, t + o2, 0.001, k === 3 ? 0.2 : 0.03, 0.6);
+        n3.connect(bp); bp.connect(gg); gg.connect(c.destination); n3.start(t + o2);
+      });
+    } else if (idx === 4) {
+      var o3 = c.createOscillator(); o3.type = "sine";
+      o3.frequency.setValueAtTime(280, t); o3.frequency.exponentialRampToValueAtTime(85, t + 0.3);
+      g = eg(c, t, 0.002, 0.4, 0.85); o3.connect(g); g.connect(c.destination); o3.start(t); o3.stop(t + dur);
+    } else if (idx === 5) {
+      var o4 = c.createOscillator(); o4.type = "sawtooth";
+      o4.frequency.setValueAtTime(1500, t); o4.frequency.exponentialRampToValueAtTime(70, t + 0.3);
+      var lp = c.createBiquadFilter(); lp.type = "lowpass";
+      lp.frequency.setValueAtTime(3200, t); lp.frequency.exponentialRampToValueAtTime(400, t + 0.3);
+      g = eg(c, t, 0.002, 0.32, 0.5); o4.connect(lp); lp.connect(g); g.connect(c.destination); o4.start(t); o4.stop(t + dur);
+    } else if (idx === 6) {
+      var o5 = c.createOscillator(); o5.type = "square";
+      o5.frequency.setValueAtTime(700, t); o5.frequency.linearRampToValueAtTime(1500, t + 0.07);
+      g = eg(c, t, 0.002, 0.12, 0.3); o5.connect(g); g.connect(c.destination); o5.start(t); o5.stop(t + dur);
+    } else if (idx === 7) {
+      var n4 = noiseSrc(c, dur), bp2 = c.createBiquadFilter(); bp2.type = "bandpass"; bp2.Q.value = 7;
+      bp2.frequency.setValueAtTime(280, t); bp2.frequency.exponentialRampToValueAtTime(7000, t + 1.1);
+      g = eg(c, t, 0.06, 1.1, 0.9); n4.connect(bp2); bp2.connect(g); g.connect(c.destination); n4.start(t);
+    } else {
+      var o6 = c.createOscillator(); o6.type = "sine"; o6.frequency.value = 55;
+      var o7 = c.createOscillator(); o7.type = "sine"; o7.frequency.value = 110;
+      g = eg(c, t, 0.012, 0.85, 0.95);
+      var g3 = c.createGain(); g3.gain.value = 0.3;
+      o6.connect(g); o7.connect(g3); g3.connect(g); g.connect(c.destination);
+      o6.start(t); o7.start(t); o6.stop(t + dur); o7.stop(t + dur);
+    }
+    return render(c);
+  }
+  function loadKit(){
+    ac();
+    var free = [];
+    for (var i = 0; i < N; i++) if (!pads[i]) free.push(i);
+    if (!free.length) { say("ALL PADS IN USE", "ERASE ONE FIRST"); toast("Every pad is loaded. Erase one first."); return; }
+    say("LOADING KIT", free.length + " PADS");
+    Promise.all(free.map(function(i){
+      return kit(i).then(function(buf){ commit(i, buf, i); }).catch(function(){});
+    })).then(function(){ say("KIT LOADED", "TAP TO PLAY"); saveBoard(); });
+  }
+
+  /* ── Render ─────────────────────────────── */
+  function label(i){ return (pads[i] && pads[i].name) ? pads[i].name : "PAD " + (i + 1); }
+  function fmt(n){ return (Math.round(n * 10) / 10).toFixed(1); }
+  function clock(s, tenths){
+    if (!isFinite(s)) s = 0;
+    var m = Math.floor(s / 60), r = s - m * 60;
+    return m + ":" + (r < 10 ? "0" : "") + (tenths ? r.toFixed(1) : Math.floor(r));
+  }
+  function paint(i){
+    var el = els[i], p = pads[i];
+    var nm = el.querySelector(".name"), wv = el.querySelector(".wave"), fl = el.querySelector(".flags");
+    if (!p) { el.classList.add("empty"); nm.textContent = "Empty"; wv.innerHTML = ""; fl.textContent = ""; }
+    else {
+      el.classList.remove("empty");
+      nm.textContent = p.name || ("Take " + (i + 1));
+      var tags = [];
+      if (p.loop) tags.push("LOOP");
+      if (p.rev) tags.push("REV");
+      if (Math.abs(p.pitch - 1) > 0.01) tags.push(p.pitch.toFixed(2) + "x");
+      if (Math.abs(p.vol - 1) > 0.01) tags.push(Math.round(p.vol * 100) + "%");
+      fl.textContent = tags.join(" ");
+      var h = "";
+      for (var k = 0; k < p.peaks.length; k++) h += '<i style="height:' + Math.round(p.peaks[k] * 100) + '%"></i>';
+      wv.innerHTML = h;
+    }
+    $("lcdMem").textContent = pads.filter(Boolean).length + "/" + N;
+  }
+  function paintAll(){ for (var i = 0; i < N; i++) paint(i); }
+  function say(main, sub){ lcdMain.textContent = main; if (sub !== undefined) lcdSub.textContent = sub; }
+  function toast(msg, actLabel, fn){
+    var t = $("toast"), a = $("toastAct");
+    $("toastMsg").textContent = msg;
+    if (actLabel) { a.textContent = actLabel; a.classList.add("show"); a.onclick = function(){ t.classList.remove("show"); fn(); }; }
+    else { a.classList.remove("show"); a.onclick = null; }
+    t.classList.add("show");
+    clearTimeout(t._t);
+    t._t = setTimeout(function(){ t.classList.remove("show"); }, 9000);
+  }
+
+  /* ── Scope ──────────────────────────────── */
+  function sizeScope(){
+    var r = scope.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    scope.width = Math.max(1, Math.round(r.width * dpr));
+    scope.height = Math.max(1, Math.round(r.height * dpr));
+    draw(null, false);
+  }
+  function draw(data, red){
+    var w = scope.width, h = scope.height, dpr = window.devicePixelRatio || 1;
+    sctx.clearRect(0, 0, w, h);
+    var cols = 30, cw = w / cols, dot = Math.max(1.4 * dpr, cw * 0.34);
+    var rows = Math.max(3, Math.floor(h / (dot * 2.1)));
+    for (var x = 0; x < cols; x++) {
+      var v = data ? Math.min(1, (data[Math.floor(x * data.length / cols)] / 205) * 1.2) : 0;
+      var lit = Math.round(v * rows);
+      for (var y = 0; y < rows; y++) {
+        sctx.fillStyle = y < lit ? (red ? "rgba(255,68,51,.95)" : "rgba(255,169,46,.95)") : "rgba(255,169,46,.09)";
+        sctx.beginPath();
+        sctx.arc(cw * x + cw / 2, h - y * (h / rows) - (h / rows) / 2, dot / 2, 0, 6.284);
+        sctx.fill();
+      }
+    }
+  }
+  function runScope(){
+    if (raf) return;
+    (function loop(){
+      var live = rig && (recIndex !== -1 || performance.now() < monitorUntil);
+      var busy = voices.length || grabbing || previewSrc || looper.state === "play";
+      if (live) { rig.an.getByteFrequencyData(rig.data); draw(rig.data, true); }
+      else if (busy && analyser) { analyser.getByteFrequencyData(freq); draw(freq, false); }
+      if (live || busy) raf = requestAnimationFrame(loop);
+      else { raf = null; draw(null, false); }
+    })();
+  }
+
+  /* ── Boards and storage ─────────────────── */
+  var IDX = "hdis:index";
+  function bkey(id){ return "hdis:b:" + id; }
+  function newId(){ return Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
+  function serialise(){
+    return pads.map(function(p){
+      if (!p) return null;
+      var o = { name: p.name, vol: p.vol, pitch: p.pitch, rev: !!p.rev, loop: !!p.loop, peaks: p.peaks };
+      if (p.kit !== undefined) o.kit = p.kit; else o.wav = p.wav;
+      return o;
+    });
+  }
+  function hydrate(arr){
+    var jobs = arr.map(function(o, i){
+      if (!o) { pads[i] = null; return Promise.resolve(); }
+      function fin(buf, keepPeaks){
+        pads[i] = {
+          name: o.name || "", peaks: keepPeaks || peaksOf(buf, 14), buffer: buf, wav: o.wav || null,
+          vol: o.vol === undefined ? 1 : o.vol, pitch: o.pitch || 1, rev: !!o.rev, loop: !!o.loop
+        };
+        if (o.kit !== undefined) pads[i].kit = o.kit;
+      }
+      if (o.kit !== undefined) return kit(o.kit).then(function(b){ fin(b, o.peaks); }).catch(function(){ pads[i] = null; });
+      if (!o.wav) { pads[i] = null; return Promise.resolve(); }
+      var bin = atob(o.wav), u = new Uint8Array(bin.length);
+      for (var k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+      return decode(u.buffer).then(function(b){ fin(b, o.peaks); }).catch(function(){ pads[i] = null; });
+    });
+    return Promise.all(jobs).then(paintAll);
+  }
+  function saveIndex(){
+    if (!window.storage) return;
+    try {
+      window.storage.set(IDX, JSON.stringify({ boards: boards, current: curId, master: masterVol })).catch(function(){});
+    } catch (e) {}
+  }
+  function saveBoard(){
+    paintAll();
+    if (!window.storage || !curId) return;
+    try {
+      var str = JSON.stringify({ name: curName, pads: serialise() });
+      if (str.length > 4400000) { toast("This board is too large to store."); return; }
+      window.storage.set(bkey(curId), str).catch(function(){});
+    } catch (e) {}
+  }
+  function loadBoard(id, then){
+    if (!window.storage) { if (then) then(); return; }
+    window.storage.get(bkey(id)).then(function(r){
+      if (!r || !r.value) { pads = new Array(N).fill(null); paintAll(); if (then) then(); return; }
+      var d = JSON.parse(r.value);
+      curName = d.name || "Board";
+      $("boardTag").textContent = curName;
+      hydrate(d.pads || []).then(function(){
+        say("READY", pads.filter(Boolean).length + " PADS LOADED");
+        if (then) then();
+      });
+    }).catch(function(){ if (then) then(); });
+  }
+  function boot(){
+    if (!window.storage) {
+      curId = newId(); boards = [{ id: curId, name: curName }];
+      say("READY", "LOAD OR REC");
+      return;
+    }
+    window.storage.get(IDX).then(function(r){
+      if (r && r.value) {
+        var d = JSON.parse(r.value);
+        boards = d.boards || []; curId = d.current || "";
+        if (d.master !== undefined) { masterVol = d.master; $("masIn").value = Math.round(masterVol * 100); $("masVal").textContent = Math.round(masterVol * 100) + "%"; }
+      }
+      if (!boards.length) { curId = newId(); boards = [{ id: curId, name: "Board 1" }]; saveIndex(); }
+      if (!curId || !boards.some(function(b){ return b.id === curId; })) curId = boards[0].id;
+      var meta = boards.filter(function(b){ return b.id === curId; })[0];
+      curName = meta ? meta.name : "Board 1";
+      $("boardTag").textContent = curName;
+      loadBoard(curId);
+    }).catch(function(){
+      curId = newId(); boards = [{ id: curId, name: curName }];
+    });
+  }
+  function switchBoard(id){
+    stopAll(); saveBoard();
+    curId = id;
+    var meta = boards.filter(function(b){ return b.id === id; })[0];
+    curName = meta ? meta.name : "Board";
+    $("boardTag").textContent = curName;
+    pads = new Array(N).fill(null); paintAll();
+    say("LOADING BOARD", curName.toUpperCase());
+    saveIndex();
+    loadBoard(id, drawBoards);
+  }
+  function drawBoards(){
+    var host = $("boardList"); host.innerHTML = "";
+    boards.forEach(function(b){
+      var row = document.createElement("div"); row.className = "item";
+      row.innerHTML = '<b class="' + (b.id === curId ? "cur" : "") + '"></b>' +
+        '<button class="mini" data-a="open">Open</button>' +
+        '<button class="mini" data-a="ren">Name</button>' +
+        '<button class="mini warn" data-a="del">Del</button>';
+      row.querySelector("b").textContent = b.name;
+      row.addEventListener("click", function(e){
+        var t = e.target.closest("button"); if (!t) return;
+        var a = t.dataset.a;
+        if (a === "open") { if (b.id !== curId) switchBoard(b.id); closeAny("boardsSheet"); }
+        else if (a === "ren") {
+          var n = prompt("Board name", b.name);
+          if (n && n.trim()) {
+            b.name = n.trim().slice(0, 20);
+            if (b.id === curId) { curName = b.name; $("boardTag").textContent = curName; saveBoard(); }
+            saveIndex(); drawBoards();
+          }
+        } else if (a === "del") {
+          if (boards.length < 2) { toast("Keep at least one board."); return; }
+          boards = boards.filter(function(x){ return x.id !== b.id; });
+          if (window.storage) { try { window.storage.delete(bkey(b.id)).catch(function(){}); } catch (e) {} }
+          saveIndex();
+          if (b.id === curId) switchBoard(boards[0].id); else drawBoards();
+        }
+      });
+      host.appendChild(row);
+    });
+  }
+  function addBoard(copy){
+    if (boards.length >= 12) { toast("Twelve boards is the limit."); return; }
+    var id = newId(), name = "Board " + (boards.length + 1);
+    var payload = copy ? { name: name, pads: serialise() } : { name: name, pads: new Array(N).fill(null) };
+    boards.push({ id: id, name: name });
+    saveIndex();
+    if (window.storage) { try { window.storage.set(bkey(id), JSON.stringify(payload)).catch(function(){}); } catch (e) {} }
+    switchBoard(id);
+    closeAny("boardsSheet");
+  }
+
+  /* ── Share ──────────────────────────────── */
+  var ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  function makeCode(){
+    var s = "";
+    for (var i = 0; i < 6; i++) s += ALPHA[Math.floor(Math.random() * ALPHA.length)];
+    return s;
+  }
+  function publish(){
+    if (!window.storage) { toast("Sharing needs storage, which is unavailable here."); return; }
+    var code = makeCode();
+    var str;
+    try { str = JSON.stringify({ name: curName, pads: serialise() }); }
+    catch (e) { toast("This board could not be packaged."); return; }
+    if (str.length > 4400000) { toast("This board is too large to publish."); return; }
+    $("shareCode").textContent = "......";
+    window.storage.set("hdis:s:" + code, str, true).then(function(){
+      $("shareCode").textContent = code;
+      $("shareNote").className = "note";
+      $("shareNote").textContent = "Published. Anyone who opens howdoisound and enters this code gets a copy of the board. It stays available until you replace it.";
+      say("PUBLISHED " + code, "SHARE THE CODE");
+    }).catch(function(){
+      $("shareCode").textContent = "------";
+      $("shareNote").className = "note bad";
+      $("shareNote").textContent = "Publishing failed. The board may be too large.";
+    });
+  }
+  function fetchCode(){
+    var code = ($("codeIn").value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (code.length !== 6) { $("shareNote").className = "note bad"; $("shareNote").textContent = "Codes are six characters."; return; }
+    if (!window.storage) { toast("Sharing needs storage, which is unavailable here."); return; }
+    $("shareNote").className = "note"; $("shareNote").textContent = "Looking up " + code + ".";
+    window.storage.get("hdis:s:" + code, true).then(function(r){
+      if (!r || !r.value) throw new Error("none");
+      var d = JSON.parse(r.value);
+      if (boards.length >= 12) { toast("Twelve boards is the limit."); return; }
+      var id = newId(), name = (d.name || "Shared") + " " + code.slice(0, 3);
+      boards.push({ id: id, name: name });
+      saveIndex();
+      window.storage.set(bkey(id), JSON.stringify({ name: name, pads: d.pads || [] })).catch(function(){});
+      closeAny("shareSheet");
+      switchBoard(id);
+      toast("Loaded the board behind " + code + ".");
+    }).catch(function(){
+      $("shareNote").className = "note bad";
+      $("shareNote").textContent = "Nothing is published under that code.";
+    });
+  }
+
+  /* ── Sheets ─────────────────────────────── */
+  function openAny(id){ $(id).classList.add("open"); document.body.classList.add("sheeting"); }
+  function closeAny(id){
+    $(id).classList.remove("open");
+    if (!document.querySelector(".sheet.open")) document.body.classList.remove("sheeting");
+  }
+
+  /* ── Pad editor ─────────────────────────── */
+  function openEdit(i){
+    editIndex = i;
+    var p = pads[i];
+    $("editTitle").textContent = "Pad " + (i + 1);
+    $("nameIn").value = (p && p.name) || "";
+    $("volIn").value = Math.round(((p ? p.vol : 1)) * 100);
+    $("pitIn").value = Math.round(((p ? p.pitch : 1)) * 100);
+    $("volVal").textContent = $("volIn").value + "%";
+    $("pitVal").textContent = (($("pitIn").value) / 100).toFixed(2) + "x";
+    $("revBtn").className = "btn" + (p && p.rev ? " on" : "");
+    $("lopBtn").className = "btn" + (p && p.loop ? " on" : "");
+    $("clearBtn").disabled = !p;
+    openAny("editSheet");
+  }
+  function editPad(){ return editIndex >= 0 ? pads[editIndex] : null; }
+
+  /* ── Interaction ────────────────────────── */
+  function setMode(m){
+    mode = m;
+    document.body.className = (document.body.classList.contains("sheeting") ? "sheeting " : "") + "mode-" + m;
+    if (m === "play") { stopRec(); closeRig(); say("PLAY MODE", pads.filter(Boolean).length + " PADS LOADED"); }
+    else if (m === "rec") say("REC MODE", micState === "sandboxed" || micState === "denied" ? "PAD OPENS CAMERA" : "PICK A PAD");
+    else if (m === "load") { stopRec(); closeRig(); say("LOAD MODE", "PICK A PAD"); }
+    else { stopRec(); closeRig(); say("EDIT MODE", "PICK A PAD"); }
+  }
+  $("mPlay").addEventListener("click", function(){ setMode("play"); });
+  $("mRec").addEventListener("click", function(){ ac(); setMode("rec"); });
+  $("mLoad").addEventListener("click", function(){ ac(); setMode("load"); });
+  $("mEdit").addEventListener("click", function(){ ac(); setMode("edit"); });
+  $("loopBtn").addEventListener("click", looperTap);
+  $("stopBtn").addEventListener("click", stopAll);
+  $("menuBtn").addEventListener("click", function(){ ac(); openAny("menuSheet"); });
+
+  grid.addEventListener("pointerdown", function(e){
+    var pad = e.target.closest(".pad");
+    if (!pad) return;
+    e.preventDefault();
+    var i = +pad.dataset.i;
+    if (mode === "play") { fire(i); looperNote(i); }
+    else if (mode === "load") pickFor(i);
+    else if (mode === "edit") openEdit(i);
+    else if (recIndex === i) stopRec();
+    else if (recIndex === -1) recordPad(i);
+  });
+
+  function erase(i){ stopPad(i); pads[i] = null; paint(i); saveBoard(); say("ERASED PAD " + (i + 1), "READY"); }
+
+  $("closeBtn").addEventListener("click", function(){ closeAny("editSheet"); editIndex = -1; });
+  $("editSheet").addEventListener("click", function(e){ if (e.target === this) { closeAny("editSheet"); editIndex = -1; } });
+  $("nameIn").addEventListener("input", function(){
+    var p = editPad(); if (!p) return;
+    p.name = this.value.trim().slice(0, 14); paint(editIndex);
+  });
+  $("nameIn").addEventListener("change", saveBoard);
+  $("volIn").addEventListener("input", function(){
+    $("volVal").textContent = this.value + "%";
+    var p = editPad(); if (!p) return;
+    p.vol = +this.value / 100; paint(editIndex);
+  });
+  $("volIn").addEventListener("change", function(){ saveBoard(); if (editPad()) fire(editIndex); });
+  $("pitIn").addEventListener("input", function(){
+    $("pitVal").textContent = (this.value / 100).toFixed(2) + "x";
+    var p = editPad(); if (!p) return;
+    p.pitch = +this.value / 100; paint(editIndex);
+  });
+  $("pitIn").addEventListener("change", function(){ saveBoard(); if (editPad()) fire(editIndex); });
+  $("revBtn").addEventListener("click", function(){
+    var p = editPad(); if (!p) return;
+    p.rev = !p.rev; this.className = "btn" + (p.rev ? " on" : "");
+    paint(editIndex); saveBoard(); fire(editIndex);
+  });
+  $("lopBtn").addEventListener("click", function(){
+    var p = editPad(); if (!p) return;
+    p.loop = !p.loop; this.className = "btn" + (p.loop ? " on" : "");
+    if (!p.loop) stopPad(editIndex);
+    paint(editIndex); saveBoard();
+  });
+  $("clearBtn").addEventListener("click", function(){
+    if (editIndex >= 0) erase(editIndex);
+    closeAny("editSheet"); editIndex = -1;
+  });
+  $("camBtn").addEventListener("click", function(){ var i = editIndex; closeAny("editSheet"); camFor(i); });
+  $("importBtn").addEventListener("click", function(){ var i = editIndex; closeAny("editSheet"); pickFor(i); });
+  $("audioBtn").addEventListener("click", function(){ var i = editIndex; closeAny("editSheet"); audioFor(i); });
+
+  $("menuClose").addEventListener("click", function(){ closeAny("menuSheet"); });
+  $("menuSheet").addEventListener("click", function(e){ if (e.target === this) closeAny("menuSheet"); });
+  $("masIn").addEventListener("input", function(){
+    masterVol = +this.value / 100;
+    $("masVal").textContent = this.value + "%";
+    if (master) master.gain.value = masterVol;
+  });
+  $("masIn").addEventListener("change", saveIndex);
+  $("boardsBtn").addEventListener("click", function(){ closeAny("menuSheet"); drawBoards(); openAny("boardsSheet"); });
+  $("shareBtn").addEventListener("click", function(){ closeAny("menuSheet"); openAny("shareSheet"); });
+  $("kitBtn").addEventListener("click", function(){ closeAny("menuSheet"); loadKit(); });
+  $("inputBtn").addEventListener("click", function(){ closeAny("menuSheet"); runDiag(); });
+  $("aboutBtn").addEventListener("click", function(){ closeAny("menuSheet"); openAny("aboutSheet"); });
+  $("aboutClose").addEventListener("click", function(){ closeAny("aboutSheet"); });
+  $("boardsClose").addEventListener("click", function(){ closeAny("boardsSheet"); });
+  $("newBoard").addEventListener("click", function(){ addBoard(false); });
+  $("dupBoard").addEventListener("click", function(){ addBoard(true); });
+  $("shareClose").addEventListener("click", function(){ closeAny("shareSheet"); });
+  $("publishBtn").addEventListener("click", publish);
+  $("fetchBtn").addEventListener("click", fetchCode);
+  $("diagClose").addEventListener("click", function(){ closeAny("diagSheet"); closeRig(); });
+  $("diagCam").addEventListener("click", function(){
+    closeAny("diagSheet"); closeRig();
+    var i = 0;
+    for (var k = 0; k < N; k++) if (!pads[k]) { i = k; break; }
+    camFor(i);
+  });
+
+  $("file").addEventListener("change", function(e){ var f = e.target.files && e.target.files[0]; e.target.value = ""; onFile(f); });
+  $("cam").addEventListener("change", function(e){
+    var f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) { say("CANCELLED", "READY"); return; }
+    onFile(f);
+  });
+  $("aud").addEventListener("change", function(e){ var f = e.target.files && e.target.files[0]; e.target.value = ""; onFile(f); });
+
+  $("trimPos").addEventListener("input", function(){
+    var maxStart = Math.max(0, srcDur - LEN);
+    trimStart = maxStart * (+this.value / 1000);
+    $("trimStart").textContent = clock(trimStart, true);
+    if (srcMode === "live") { try { vid.currentTime = trimStart; } catch (e) {} }
+    drawTrim();
+  });
+  $("trimPos").addEventListener("change", function(){ if (srcMode === "buffer") preview(); });
+  $("trimPrev").addEventListener("click", preview);
+  $("trimUse").addEventListener("click", useSelection);
+  $("trimRoll").addEventListener("click", function(){ var i = trimIndex; closeTrim(); pickFor(i); });
+  $("trimCancel").addEventListener("click", function(){ closeTrim(); say("CANCELLED", "READY"); });
+
+  document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
+  window.addEventListener("resize", function(){ sizeScope(); if ($("trimSheet").classList.contains("open")) drawTrim(); });
+  paintAll(); sizeScope();
+  say("READY", "LOAD OR REC");
+  boot();
+})();
+</script>
+</body>
+</html>
